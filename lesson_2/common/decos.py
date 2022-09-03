@@ -3,12 +3,9 @@ import logs.config_server_log
 import logs.config_client_log
 import logging
 
-# метод определения модуля, источника запуска.
 if sys.argv[0].find('client') == -1:
-    #если не клиент то сервер!
     logger = logging.getLogger('server')
 else:
-    # ну, раз не сервер, то клиент
     logger = logging.getLogger('client')
 
 
@@ -18,4 +15,3 @@ def log(func_to_log):
         ret = func_to_log(*args , **kwargs)
         return ret
     return log_saver
-

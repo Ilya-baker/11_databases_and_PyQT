@@ -9,10 +9,9 @@ import time
 import threading
 import configparser
 import logs.config_server_log
-from errors import IncorrectDataRecivedError
 from common.variables import *
 from common.utils import *
-from decos import log
+from common.decos import log
 from descrptrs import Port
 from metaclasses import ServerMaker
 from server_database import ServerStorage
@@ -29,7 +28,7 @@ conflag_lock = threading.Lock()
 
 # Парсер аргументов коммандной строки.
 @log
-def arg_parser():
+def arg_parser(default_port, default_address):
     parser = argparse.ArgumentParser()
     parser.add_argument('-p', default=DEFAULT_PORT, type=int, nargs='?')
     parser.add_argument('-a', default='', nargs='?')
@@ -65,6 +64,7 @@ class Server(threading.Thread, metaclass=ServerMaker):
             f'Запущен сервер, порт для подключений: {self.port} , адрес с которого принимаются подключения: {self.addr}. Если адрес не указан, принимаются соединения с любых адресов.')
         # Готовим сокет
         transport = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        transport.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         transport.bind((self.addr, self.port))
         transport.settimeout(0.5)
 
@@ -72,8 +72,8 @@ class Server(threading.Thread, metaclass=ServerMaker):
         self.sock = transport
         self.sock.listen()
 
-    def main_loop(self):
-        # Инициализация Сокета
+    def run(self):
+        global new_connection
         self.init_socket()
 
         # Основной цикл программы сервера
@@ -104,12 +104,14 @@ class Server(threading.Thread, metaclass=ServerMaker):
                         self.process_client_message(get_message(client_with_message), client_with_message)
                     except(OSError):
                         logger.info(f'Клиент {client_with_message.getpeername()} отключился от сервера.')
-                        for name in self.names:#add_new
+                        for name in self.names:
                             if self.names[name] == client_with_message:
                                 self.database.user_logout(name)
                                 del self.names[name]
                                 break
                         self.clients.remove(client_with_message)
+                        with conflag_lock:
+                            new_connection = True
 
             # Если есть сообщения, обрабатываем каждое.
             for message in self.messages:
@@ -120,6 +122,8 @@ class Server(threading.Thread, metaclass=ServerMaker):
                     self.clients.remove(self.names[message[DESTINATION]])
                     self.database.user_logout(message[DESTINATION])
                     del self.names[message[DESTINATION]]
+                    with conflag_lock:
+                        new_connection = True
             self.messages.clear()
 
     # Функция адресной отправки сообщения определённому клиенту. Принимает словарь сообщение, список зарегистрированых
@@ -155,9 +159,14 @@ class Server(threading.Thread, metaclass=ServerMaker):
 
         elif ACTION in message and message[ACTION] == MESSAGE and DESTINATION in message and TIME in message \
                 and SENDER in message and MESSAGE_TEXT in message and self.names[message[SENDER]] == client:
-            self.messages.append(message)
-            self.database.process_message(
-                message[SENDER], message[DESTINATION])
+            if message[DESTINATION] in self.names:
+                self.messages.append(message)
+                self.database.process_message(message[SENDER], message[DESTINATION])
+                send_message(client, RESPONSE_200)
+            else:
+                response = RESPONSE_400
+                response[ERROR] = 'Пользователь не зарегистрирован на сервере.'
+                send_message(client, response)
             return
 
         elif ACTION in message and message[ACTION] == EXIT and ACCOUNT_NAME in message and self.names[message[ACCOUNT_NAME]] == client:
@@ -195,11 +204,23 @@ class Server(threading.Thread, metaclass=ServerMaker):
             return
 
 
+def config_load():
+    config = configparser.ConfigParser()
+    dir_path = os.path.dirname(os.path.realpath(__file__))
+    config.read(f"{dir_path}/{'server+++.ini'}")
+    if 'SETTINGS' in config:
+        return config
+    else:
+        config.add_section('SETTINGS')
+        config.set('SETTINGS', 'Default_port', str(DEFAULT_PORT))
+        config.set('SETTINGS', 'Listen_Address', '')
+        config.set('SETTINGS', 'Database_path', '')
+        config.set('SETTINGS', 'Database_file', 'server_database.db3')
+        return config
+
+
 def main():
     config = configparser.ConfigParser()
-
-    dir_path = os.path.dirname(os.path.realpath(__file__))
-    config.read(f"{dir_path}/{'server.ini'}")
 
     listen_address, listen_port = arg_parser(config['SETTINGS']['Default_port'], config['SETTINGS']['Listen_Address'])
 
@@ -235,6 +256,7 @@ def main():
         stat_window.history_table.setModel(create_stat_model(database))
         stat_window.history_table.resizeColumnsToContents()
         stat_window.history_table.resizeRowsToContents()
+        stat_window.show()
 
     def server_config():
         global config_window
@@ -258,8 +280,8 @@ def main():
             config['SETTINGS']['Listen_Address'] = config_window.ip.text()
             if 1023 < port < 65536:
                 config['SETTINGS']['Default_port'] = str(port)
-                print(port)
-                with open('server.ini', 'w') as conf:
+                dir_path = os.path.dirname(os.path.realpath(__file__))
+                with open(f"{dir_path}/{'server+++.ini'}", 'w') as conf:
                     config.write(conf)
                     message.information(
                         config_window, 'OK', 'Настройки успешно сохранены!')

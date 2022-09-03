@@ -120,9 +120,7 @@ class ServerStorage:
 
     def user_logout(self, username):
         user = self.session.query(self.AllUsers).filter_by(name=username).first()
-
         self.session.query(self.ActiveUsers).filter_by(user=user.id).delete()
-
         self.session.commit()
 
     def process_message(self, sender, recipient):
@@ -153,10 +151,10 @@ class ServerStorage:
         if not contact:
             return
 
-        print(self.session.query(self.UsersContacts).filter(
+        self.session.query(self.UsersContacts).filter(
             self.UsersContacts.user == user.id,
             self.UsersContacts.contact == contact.id
-        ).delete())
+        ).delete()
         self.session.commit()
 
     def users_list(self):
