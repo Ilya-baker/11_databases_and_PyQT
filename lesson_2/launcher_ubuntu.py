@@ -26,8 +26,14 @@ while True:
     elif action == "s":
         process.append(get_subprocess("server.py"))
 
-        for i in range(2):
-            process.append(get_subprocess(f"client.py -n test{i+1}"))
+    elif action == 'k':
+        print('Убедитесь, что на сервере зарегистрировано необходимо количество клиентов с паролем 123456.')
+        print('Первый запуск может быть достаточно долгим из-за генерации ключей!')
+        clients_count = int(
+            input('Введите количество тестовых клиентов для запуска: '))
+        for i in range(clients_count):
+            process.append(get_subprocess(f"client.py -n test{i + 1} -p 123456"))
+
 
     elif action == "x":
         while process:
