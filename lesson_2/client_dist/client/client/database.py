@@ -5,6 +5,7 @@ import sys
 sys.path.append('../')
 from common.variables import *
 import datetime
+from sqlalchemy.sql import default_comparator
 
 
 class ClientDatabase:

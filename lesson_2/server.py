@@ -37,7 +37,7 @@ def arg_parser(default_port, default_address):
 @log
 def config_load():
     config = configparser.ConfigParser()
-    dir_path = os.path.dirname(os.path.realpath(__file__))
+    dir_path = os.getcwd()
     config.read(f"{dir_path}/{'server+++.ini'}")
     if 'SETTINGS' in config:
         return config
